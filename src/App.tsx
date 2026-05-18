@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Home, BookMarked, Zap, CalendarDays, UserCircle2,
   ChevronRight, Plus, Check, Target, BookOpen,
@@ -285,16 +284,30 @@ const dateScore = s => {
   return MSHORT.indexOf(m) * 31 + parseInt(d);
 };
 
+/* ─── LOCALSTORAGE HELPERS ───────────────────────────────── */
+const load = (key, fallback) => {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+};
+const save = (key, val) => {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+};
+
 /* ═══════════════════════════════════════════════════════════
    MAIN APP
 ═══════════════════════════════════════════════════════════ */
 export default function App() {
-  const [tab, setTab]         = useState("home");
-  const [data, setData]       = useState(INIT);
-  const [userName, setUserName] = useState("Maul");
-  const [avatar, setAvatar]   = useState({ type:"initial", value:"" }); // "initial"|"photo"|"emoji"
-  const fileRef               = useRef(null);
-  const [noteView, setNoteView] = useState(null);  // null | "general" | groupId(number)
+  const [tab, setTab]           = useState("home");
+  const [data, setData]         = useState(() => load("lum_data", INIT));
+  const [userName, setUserName] = useState(() => load("lum_name", "Maul"));
+  const [avatar, setAvatar]     = useState(() => load("lum_avatar", { type:"initial", value:"" }));
+  const fileRef                 = useRef(null);
+  const [noteView, setNoteView] = useState(null);
+
+  /* persist to localStorage on every change */
+  useEffect(() => { save("lum_data",   data);     }, [data]);
+  useEffect(() => { save("lum_name",   userName); }, [userName]);
+  useEffect(() => { save("lum_avatar", avatar);   }, [avatar]);  // null | "general" | groupId(number)
   const [modal, setModal]     = useState(null);
   const [gid, setGid]         = useState(null);    // group id for addNote
   const [f, setF]             = useState({ title:"", body:"", emoji:"", name:"", learn:"", target:"", time:"", stitle:"", sdesc:"", newName:"" });
@@ -1068,15 +1081,19 @@ export default function App() {
     <>
       <FontLoader/>
       <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:T.bg }}>
-        <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+        <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", paddingBottom:72 }}>
           {tab==="home"     && <HomeScreen/>}
           {tab==="notes"    && <NotesScreen/>}
           {tab==="learn"    && <LearnScreen/>}
           {tab==="schedule" && <ScheduleScreen/>}
           {tab==="profile"  && <ProfileScreen/>}
         </div>
-        <nav style={{ flexShrink:0, background:T.surf, borderTop:`1px solid ${T.border}`,
-          boxShadow:"0 -4px 28px rgba(11,61,40,.07)", padding:"10px 8px 20px" }}>
+        <nav style={{
+          position:"fixed", bottom:0, left:0, right:0, zIndex:50,
+          background:T.surf, borderTop:`1px solid ${T.border}`,
+          boxShadow:"0 -4px 28px rgba(11,61,40,.07)",
+          padding:"10px 8px 20px",
+        }}>
           <div style={{ display:"flex", justifyContent:"space-around", alignItems:"center", maxWidth:640, margin:"0 auto" }}>
             {navs.map(({ id, Icon, label }) => (
               <NavItem key={id} icon={Icon} label={label} active={tab===id}
