@@ -1082,11 +1082,11 @@ export default function App() {
       <FontLoader/>
       <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:T.bg }}>
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", paddingBottom:72 }}>
-          {tab==="home"     && <HomeScreen/>}
-          {tab==="notes"    && <NotesScreen/>}
-          {tab==="learn"    && <LearnScreen/>}
-          {tab==="schedule" && <ScheduleScreen/>}
-          {tab==="profile"  && <ProfileScreen/>}
+          {tab==="home"     && HomeScreen()}
+          {tab==="notes"    && NotesScreen()}
+          {tab==="learn"    && LearnScreen()}
+          {tab==="schedule" && ScheduleScreen()}
+          {tab==="profile"  && ProfileScreen()}
         </div>
         <nav style={{
           position:"fixed", bottom:0, left:0, right:0, zIndex:50,
