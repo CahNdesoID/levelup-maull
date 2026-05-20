@@ -85,53 +85,65 @@ const INIT = {
   ],
 };
 
-/* ─── SWIPE-RIGHT TO DELETE ──────────────────────────────── */
-const SwipeDelete = ({ onDelete, children, radius = 0 }) => {
+/* ─── SWIPE ACTIONS (right=delete, left=edit) ────────────── */
+const SwipeActions = ({ onDelete, onEdit, children, radius = 0 }) => {
   const [dx, setDx]   = useState(0);
   const dragging      = useRef(false);
   const startX        = useRef(0);
-  const THRESHOLD     = 76;
+  const THR           = 76;
 
   const onTS = e => { dragging.current = true; startX.current = e.touches[0].clientX; };
   const onTM = e => {
     if (!dragging.current) return;
     const d = e.touches[0].clientX - startX.current;
-    setDx(d > 0 ? Math.min(d, THRESHOLD + 8) : 0);
+    setDx(Math.max(-(THR + 8), Math.min(THR + 8, d)));
   };
   const onTE = () => {
     dragging.current = false;
-    if (dx >= THRESHOLD * 0.72) onDelete();
+    if (dx >=  THR * 0.72) onDelete?.();
+    if (dx <= -THR * 0.72) onEdit?.();
     setDx(0);
   };
 
-  const prog = Math.min(dx / THRESHOLD, 1);
+  const dp = Math.min(Math.max( dx, 0) / THR, 1); // delete progress
+  const ep = Math.min(Math.max(-dx, 0) / THR, 1); // edit progress
 
   return (
-    /* radius on wrapper clips the red bg to the same rounded shape as the card */
     <div style={{ position:"relative", overflow:"hidden", borderRadius:radius }}>
-      <div style={{
-        position:"absolute", inset:0, borderRadius:radius,
-        background:`rgb(${Math.round(224-prog*20)},${Math.round(92-prog*10)},${Math.round(92-prog*10)})`,
-        display:"flex", alignItems:"center",
-        paddingLeft: Math.max(dx * 0.38, 10),
-      }}>
+      {/* DELETE bg — left side, right swipe */}
+      {dx > 0 && (
         <div style={{
-          width:42, height:42, borderRadius:"50%",
-          background:"rgba(255,255,255,.18)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          transform:`scale(${0.3 + prog * 0.7})`,
-          opacity: Math.min(dx / 18, 1),
-          transition: dragging.current ? "none" : "transform .25s ease, opacity .2s ease",
+          position:"absolute", inset:0, borderRadius:radius,
+          background:`rgb(${Math.round(224-dp*20)},${Math.round(92-dp*10)},${Math.round(92-dp*10)})`,
+          display:"flex", alignItems:"center", paddingLeft: Math.max(dx * 0.38, 10),
         }}>
-          <Trash2 size={19} color="white" strokeWidth={2.2}/>
+          <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,.18)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            transform:`scale(${0.3+dp*0.7})`, opacity:Math.min(dx/18,1) }}>
+            <Trash2 size={19} color="white" strokeWidth={2.2}/>
+          </div>
         </div>
-      </div>
-      <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
-        style={{
-          transform:`translateX(${dx}px)`,
-          transition: dragging.current ? "none" : "transform .35s cubic-bezier(.34,1.4,.64,1)",
-          position:"relative", zIndex:1,
+      )}
+      {/* EDIT bg — right side, left swipe */}
+      {dx < 0 && (
+        <div style={{
+          position:"absolute", inset:0, borderRadius:radius,
+          background:`rgb(${Math.round(11+ep*30)},${Math.round(100+ep*30)},${Math.round(60+ep*20)})`,
+          display:"flex", alignItems:"center", justifyContent:"flex-end",
+          paddingRight: Math.max(-dx * 0.38, 10),
         }}>
+          <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,.18)",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            transform:`scale(${0.3+ep*0.7})`, opacity:Math.min(-dx/18,1) }}>
+            <Pencil size={17} color="white" strokeWidth={2.2}/>
+          </div>
+        </div>
+      )}
+      {/* draggable content */}
+      <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+        style={{ transform:`translateX(${dx}px)`,
+          transition:dragging.current?"none":"transform .35s cubic-bezier(.34,1.4,.64,1)",
+          position:"relative", zIndex:1 }}>
         {children}
       </div>
     </div>
@@ -308,8 +320,9 @@ export default function App() {
   useEffect(() => { save("lum_data",   data);     }, [data]);
   useEffect(() => { save("lum_name",   userName); }, [userName]);
   useEffect(() => { save("lum_avatar", avatar);   }, [avatar]);  // null | "general" | groupId(number)
-  const [modal, setModal]     = useState(null);
-  const [gid, setGid]         = useState(null);    // group id for addNote
+  const [modal, setModal]       = useState(null);
+  const [editTarget, setEditTarget] = useState(null); // {type,id,...fields}
+  const [gid, setGid]           = useState(null);    // group id for addNote
   const [f, setF]             = useState({ title:"", body:"", emoji:"", name:"", learn:"", target:"", time:"", stitle:"", sdesc:"", newName:"" });
   const up = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const close = () => setModal(null);
@@ -373,6 +386,67 @@ export default function App() {
     setUserName(f.newName.trim());
     setF(p => ({ ...p, newName:"" }));
     close();
+  };
+
+  /* ── edit handlers ── */
+  const closeEdit = () => setEditTarget(null);
+  const upEdit = k => e => setEditTarget(p => ({ ...p, [k]: e.target.value }));
+
+  const saveEdit = () => {
+    if (!editTarget) return;
+    const { type, id } = editTarget;
+    if (type==="learned") {
+      if (!editTarget.text?.trim()) return;
+      setData(p => ({ ...p, learned: p.learned.map(l => l.id===id ? {...l, text:editTarget.text} : l) }));
+    } else if (type==="target") {
+      if (!editTarget.title?.trim()) return;
+      setData(p => ({ ...p, targets: p.targets.map(t => t.id===id ? {...t, title:editTarget.title} : t) }));
+    } else if (type==="note-group") {
+      if (!editTarget.title?.trim()) return;
+      setData(p => ({ ...p, groups: p.groups.map(g => g.id===editTarget.gid
+        ? { ...g, notes: g.notes.map(n => n.id===id ? {...n, title:editTarget.title, body:editTarget.body} : n) }
+        : g) }));
+    } else if (type==="note-general") {
+      if (!editTarget.title?.trim()) return;
+      setData(p => ({ ...p, general: p.general.map(n => n.id===id ? {...n, title:editTarget.title, body:editTarget.body} : n) }));
+    } else if (type==="sched") {
+      if (!editTarget.title?.trim()) return;
+      setData(p => ({ ...p, schedule: p.schedule
+        .map(s => s.id===id ? {...s, time:editTarget.time, title:editTarget.title, desc:editTarget.desc} : s)
+        .sort((a,b) => a.time.localeCompare(b.time)) }));
+    }
+    closeEdit();
+  };
+
+  /* ── edit modal (unified) ── */
+  const EditModal = () => {
+    if (!editTarget) return null;
+    const { type } = editTarget;
+    const titles = { learned:"Edit Insight", target:"Edit Target", "note-group":"Edit Note", "note-general":"Edit Note", sched:"Edit Activity" };
+    return (
+      <Modal show={true} onClose={closeEdit} title={titles[type] || "Edit"}>
+        {type==="learned" && (
+          <Txt ph="Insight..." val={editTarget.text||""} chg={upEdit("text")}/>
+        )}
+        {(type==="note-group"||type==="note-general") && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <Inp ph="Title..." val={editTarget.title||""} chg={upEdit("title")}/>
+            <Txt ph="Content..." val={editTarget.body||""} chg={upEdit("body")}/>
+          </div>
+        )}
+        {type==="target" && (
+          <Inp ph="Target..." val={editTarget.title||""} chg={upEdit("title")}/>
+        )}
+        {type==="sched" && (
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            <Inp ph="Time (e.g. 08:00)" val={editTarget.time||""} chg={upEdit("time")}/>
+            <Inp ph="Activity title..." val={editTarget.title||""} chg={upEdit("title")}/>
+            <Inp ph="Description..." val={editTarget.desc||""} chg={upEdit("desc")}/>
+          </div>
+        )}
+        <BtnRow onCancel={closeEdit} onSave={saveEdit} label="Save Changes"/>
+      </Modal>
+    );
   };
 
   const navs = [
@@ -567,7 +641,7 @@ export default function App() {
               </div>
             )}
             {grp.notes.map(n => (
-              <SwipeDelete key={n.id} onDelete={() => delNote(grp.id, n.id)} radius={20}>
+              <SwipeActions key={n.id} onDelete={() => delNote(grp.id, n.id)} onEdit={() => setEditTarget({type:"note-group", id:n.id, gid:grp.id, title:n.title, body:n.body})} radius={20}>
                 <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -578,7 +652,7 @@ export default function App() {
                   </div>
                   <p style={{ fontSize:13, color:"#555", lineHeight:1.65, paddingLeft:16 }}>{n.body}</p>
                 </Card>
-              </SwipeDelete>
+              </SwipeActions>
             ))}
             <div style={{ height:8 }}/>
           </div>
@@ -621,7 +695,8 @@ export default function App() {
               <Plus size={16}/> Add General Note
             </button>
             {data.general.map(n => (
-              <SwipeDelete key={n.id} onDelete={() => delGeneral(n.id)} radius={20}>
+              <SwipeActions key={n.id} onDelete={() => delGeneral(n.id)} radius={20}
+                onEdit={() => setEditTarget({type:"note-general", id:n.id, title:n.title, body:n.body})}>
                 <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                     <p className="fd" style={{ fontSize:16, fontWeight:800, color:T.green }}>{n.title}</p>
@@ -629,7 +704,7 @@ export default function App() {
                   </div>
                   <p style={{ fontSize:13, color:"#555", lineHeight:1.65 }}>{n.body}</p>
                 </Card>
-              </SwipeDelete>
+              </SwipeActions>
             ))}
             <div style={{ height:8 }}/>
           </div>
@@ -659,13 +734,13 @@ export default function App() {
               onBtn={() => { setF(p => ({...p, name:"", emoji:""})); setModal("addGroup"); }}/>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
               {data.groups.map(g => (
-                <SwipeDelete key={g.id} onDelete={() => delGroup(g.id)} radius={20}>
+                <SwipeActions key={g.id} onDelete={() => delGroup(g.id)} radius={20}>
                   <Card bg={g.color} p={20} onClick={() => setNoteView(g.id)} style={{ borderRadius:20, boxShadow:"none" }}>
                     <div style={{ fontSize:26, marginBottom:10 }}>{g.emoji}</div>
                     <p className="fd" style={{ fontSize:15, fontWeight:800, color:T.green, lineHeight:1.2, marginBottom:4 }}>{g.name}</p>
                     <p style={{ fontSize:12, color:T.green, opacity:.6 }}>{g.notes.length} notes</p>
                   </Card>
-                </SwipeDelete>
+                </SwipeActions>
               ))}
             </div>
           </div>
@@ -735,7 +810,8 @@ export default function App() {
             <p style={{ fontSize:13, color:T.muted, textAlign:"center", padding:"16px 0" }}>Nothing yet — add your first insight!</p>
           )}
           {todayLearned.map((item, i) => (
-            <SwipeDelete key={item.id} onDelete={() => delLearned(item.id)}>
+            <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
+              onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
               <div style={{ display:"flex", gap:12, padding:"10px 0",
                 borderBottom:i<todayLearned.length-1?`1px solid ${T.border}`:"none", background:T.surf }}>
                 <div style={{ width:26, height:26, borderRadius:"50%", background:T.yellow, flexShrink:0,
@@ -744,7 +820,7 @@ export default function App() {
                 </div>
                 <p style={{ fontSize:13, color:"#444", lineHeight:1.7 }}>{item.text}</p>
               </div>
-            </SwipeDelete>
+            </SwipeActions>
           ))}
         </Card>
 
@@ -762,7 +838,8 @@ export default function App() {
             </div>
           </div>
           {data.targets.map((t, i) => (
-            <SwipeDelete key={t.id} onDelete={() => delTarget(t.id)}>
+            <SwipeActions key={t.id} onDelete={() => delTarget(t.id)}
+              onEdit={() => setEditTarget({type:"target", id:t.id, title:t.title})}>
               <div onClick={() => toggleTarget(t.id)}
                 style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", cursor:"pointer",
                   borderBottom:i<data.targets.length-1?`1px solid ${T.border}`:"none", background:T.surf }}>
@@ -775,7 +852,7 @@ export default function App() {
                 <span style={{ fontSize:14, fontWeight:600, color:t.done?T.muted:T.text,
                   textDecoration:t.done?"line-through":"none", transition:"all .2s" }}>{t.title}</span>
               </div>
-            </SwipeDelete>
+            </SwipeActions>
           ))}
         </Card>
 
@@ -837,7 +914,8 @@ export default function App() {
                   border:"2.5px solid white", boxShadow:"0 0 0 2px "+T.border }}/>
               </div>
               <div style={{ flex:1 }}>
-                <SwipeDelete onDelete={() => delSched(s.id)} radius={18}>
+                <SwipeActions onDelete={() => delSched(s.id)} radius={18}
+                  onEdit={() => setEditTarget({type:"sched", id:s.id, time:s.time, title:s.title, desc:s.desc})}>
                   <div onClick={() => toggleSched(s.id)} style={{ cursor:"pointer" }}>
                     <Card bg={s.done?"#F5F0E8":s.color} p={14} style={{ borderRadius:18, boxShadow:"none" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -851,7 +929,7 @@ export default function App() {
                       </div>
                     </Card>
                   </div>
-                </SwipeDelete>
+                </SwipeActions>
               </div>
             </div>
           ))}
@@ -963,7 +1041,8 @@ export default function App() {
                   <div style={{ flex:1, height:1, background:T.border }}/>
                 </div>
                 {byDate[date].map((item, i) => (
-                  <SwipeDelete key={item.id} onDelete={() => delLearned(item.id)}>
+                  <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
+                    onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
                     <div style={{ display:"flex", gap:10, padding:"10px 0",
                       borderBottom:i<byDate[date].length-1?`1px solid ${T.border}`:"none",
                       background:T.surf }}>
@@ -971,7 +1050,7 @@ export default function App() {
                         flexShrink:0, marginTop:8 }}/>
                       <p style={{ fontSize:13, color:"#444", lineHeight:1.7 }}>{item.text}</p>
                     </div>
-                  </SwipeDelete>
+                  </SwipeActions>
                 ))}
               </div>
             ))}
@@ -1088,6 +1167,7 @@ export default function App() {
           {tab==="schedule" && ScheduleScreen()}
           {tab==="profile"  && ProfileScreen()}
         </div>
+        {EditModal()}
         <nav style={{
           position:"fixed", bottom:0, left:0, right:0, zIndex:50,
           background:T.surf, borderTop:`1px solid ${T.border}`,
