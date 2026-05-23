@@ -295,7 +295,8 @@ const PreviewOverlay = ({ preview, onClose }) => {
         {/* Body */}
         {(preview.type==="note"||preview.type==="general") && (
           <>
-            <p style={{ fontSize:14, color:"#444", lineHeight:1.85, marginBottom:20 }}>{preview.body||"(no content)"}</p>
+            <p style={{ fontSize:14, color:"#444", lineHeight:1.85, marginBottom:20,
+              whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{preview.body||"(no content)"}</p>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
               paddingTop:16, borderTop:`1px solid ${T.border}` }}>
               <span style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{preview.date}</span>
@@ -304,7 +305,8 @@ const PreviewOverlay = ({ preview, onClose }) => {
         )}
         {preview.type==="learned" && (
           <>
-            <p style={{ fontSize:16, color:T.text, lineHeight:1.85, marginBottom:20, marginTop:12 }}>{preview.text}</p>
+            <p style={{ fontSize:16, color:T.text, lineHeight:1.85, marginBottom:20, marginTop:12,
+              whiteSpace:"pre-wrap", wordBreak:"break-word" }}>{preview.text}</p>
             <div style={{ paddingTop:16, borderTop:`1px solid ${T.border}` }}>
               <span style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{preview.date}</span>
             </div>
