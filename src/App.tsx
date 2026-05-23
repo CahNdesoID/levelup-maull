@@ -15,6 +15,11 @@ const FontLoader = () => (
     .fd { font-family:'Bricolage Grotesque',sans-serif; }
     ::-webkit-scrollbar { width:0; }
     input, textarea { font-family:'Plus Jakarta Sans',sans-serif; }
+    @keyframes flyIn {
+      from { opacity:0; transform:scale(0.88) translateY(20px); }
+      to   { opacity:1; transform:scale(1) translateY(0); }
+    }
+    .fly-in { animation: flyIn .26s cubic-bezier(.34,1.56,.64,1) forwards; }
   `}</style>
 );
 
@@ -234,6 +239,82 @@ const BtnRow = ({ onCancel, onSave, label="Save" }) => (
   </div>
 );
 
+/* ─── FLYING CARD PREVIEW OVERLAY ───────────────────────── */
+const PreviewOverlay = ({ preview, onClose }) => {
+  if (!preview) return null;
+  return (
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, zIndex:300,
+      background:"rgba(0,0,0,.55)",
+      backdropFilter:"blur(7px)", WebkitBackdropFilter:"blur(7px)",
+      display:"flex", alignItems:"center", justifyContent:"center",
+      padding:"24px 16px",
+    }}>
+      <div className="fly-in" onClick={e => e.stopPropagation()} style={{
+        background:T.surf, borderRadius:28, padding:28,
+        width:"100%", maxWidth:520, maxHeight:"78vh", overflowY:"auto",
+        boxShadow:"0 28px 80px rgba(0,0,0,.35), 0 4px 20px rgba(0,0,0,.12)",
+      }}>
+        {/* Header row */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:18 }}>
+          <div style={{ flex:1, paddingRight:12 }}>
+            {preview.type==="note" && (
+              <>
+                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:preview.color||T.sage }}/>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:".08em" }}>{preview.groupName||"Note"}</span>
+                </div>
+                <p className="fd" style={{ fontSize:22, fontWeight:800, color:T.green, lineHeight:1.2 }}>{preview.title}</p>
+              </>
+            )}
+            {preview.type==="general" && (
+              <>
+                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:T.lav }}/>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:".08em" }}>General Note</span>
+                </div>
+                <p className="fd" style={{ fontSize:22, fontWeight:800, color:T.green, lineHeight:1.2 }}>{preview.title}</p>
+              </>
+            )}
+            {preview.type==="learned" && (
+              <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                <div style={{ width:8, height:8, borderRadius:"50%", background:"#4DBF8A" }}/>
+                <span style={{ fontSize:11, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:".08em" }}>Learning Insight</span>
+              </div>
+            )}
+          </div>
+          {/* Close button */}
+          <button onClick={onClose} style={{
+            width:34, height:34, borderRadius:"50%",
+            background:T.bg, border:"none", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+            fontSize:20, color:T.muted, lineHeight:1, fontWeight:300,
+          }}>×</button>
+        </div>
+
+        {/* Body */}
+        {(preview.type==="note"||preview.type==="general") && (
+          <>
+            <p style={{ fontSize:14, color:"#444", lineHeight:1.85, marginBottom:20 }}>{preview.body||"(no content)"}</p>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
+              paddingTop:16, borderTop:`1px solid ${T.border}` }}>
+              <span style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{preview.date}</span>
+            </div>
+          </>
+        )}
+        {preview.type==="learned" && (
+          <>
+            <p style={{ fontSize:16, color:T.text, lineHeight:1.85, marginBottom:20, marginTop:12 }}>{preview.text}</p>
+            <div style={{ paddingTop:16, borderTop:`1px solid ${T.border}` }}>
+              <span style={{ fontSize:12, color:T.muted, fontWeight:600 }}>{preview.date}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 /* ─── CARD CORNER DELETE BTN ─────────────────────────────── */
 // Sits flush in the top-right corner, border-radius mirrors the card corner
 const UNUSED_CardDelBtn = ({ onDelete }) => {
@@ -321,8 +402,9 @@ export default function App() {
   useEffect(() => { save("lum_name",   userName); }, [userName]);
   useEffect(() => { save("lum_avatar", avatar);   }, [avatar]);  // null | "general" | groupId(number)
   const [modal, setModal]       = useState(null);
-  const [editTarget, setEditTarget] = useState(null); // {type,id,...fields}
-  const [gid, setGid]           = useState(null);    // group id for addNote
+  const [editTarget, setEditTarget] = useState(null);
+  const [preview, setPreview]       = useState(null);
+  const [gid, setGid]               = useState(null);    // group id for addNote
   const [f, setF]             = useState({ title:"", body:"", emoji:"", name:"", learn:"", target:"", time:"", stitle:"", sdesc:"", newName:"" });
   const up = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const close = () => setModal(null);
@@ -642,7 +724,8 @@ export default function App() {
             )}
             {grp.notes.map(n => (
               <SwipeActions key={n.id} onDelete={() => delNote(grp.id, n.id)} onEdit={() => setEditTarget({type:"note-group", id:n.id, gid:grp.id, title:n.title, body:n.body})} radius={20}>
-                <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}>
+                <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}
+                  onClick={() => setPreview({type:"note", ...n, color:grp.color, groupName:grp.name})}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <div style={{ width:8, height:8, borderRadius:"50%", background:grp.color, flexShrink:0, marginTop:2 }}/>
@@ -650,7 +733,8 @@ export default function App() {
                     </div>
                     <span style={{ fontSize:11, color:T.muted, flexShrink:0, marginLeft:8 }}>{n.date}</span>
                   </div>
-                  <p style={{ fontSize:13, color:"#555", lineHeight:1.65, paddingLeft:16 }}>{n.body}</p>
+                  <p style={{ fontSize:13, color:"#555", lineHeight:1.65, paddingLeft:16,
+                    display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{n.body}</p>
                 </Card>
               </SwipeActions>
             ))}
@@ -697,12 +781,14 @@ export default function App() {
             {data.general.map(n => (
               <SwipeActions key={n.id} onDelete={() => delGeneral(n.id)} radius={20}
                 onEdit={() => setEditTarget({type:"note-general", id:n.id, title:n.title, body:n.body})}>
-                <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}>
+                <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}
+                  onClick={() => setPreview({type:"general", ...n})}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                     <p className="fd" style={{ fontSize:16, fontWeight:800, color:T.green }}>{n.title}</p>
                     <span style={{ fontSize:11, color:T.muted }}>{n.date}</span>
                   </div>
-                  <p style={{ fontSize:13, color:"#555", lineHeight:1.65 }}>{n.body}</p>
+                  <p style={{ fontSize:13, color:"#555", lineHeight:1.65,
+                    display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{n.body}</p>
                 </Card>
               </SwipeActions>
             ))}
@@ -812,13 +898,15 @@ export default function App() {
           {todayLearned.map((item, i) => (
             <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
               onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
-              <div style={{ display:"flex", gap:12, padding:"10px 0",
+              <div onClick={() => setPreview({type:"learned", ...item})}
+                style={{ display:"flex", gap:12, padding:"10px 0", cursor:"pointer",
                 borderBottom:i<todayLearned.length-1?`1px solid ${T.border}`:"none", background:T.surf }}>
                 <div style={{ width:26, height:26, borderRadius:"50%", background:T.yellow, flexShrink:0,
                   display:"flex", alignItems:"center", justifyContent:"center", marginTop:1 }}>
                   <span className="fd" style={{ fontSize:12, fontWeight:800, color:T.green }}>{i+1}</span>
                 </div>
-                <p style={{ fontSize:13, color:"#444", lineHeight:1.7 }}>{item.text}</p>
+                <p style={{ fontSize:13, color:"#444", lineHeight:1.7,
+                  display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{item.text}</p>
               </div>
             </SwipeActions>
           ))}
@@ -1043,12 +1131,14 @@ export default function App() {
                 {byDate[date].map((item, i) => (
                   <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
                     onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
-                    <div style={{ display:"flex", gap:10, padding:"10px 0",
+                    <div onClick={() => setPreview({type:"learned", ...item})}
+                      style={{ display:"flex", gap:10, padding:"10px 0", cursor:"pointer",
                       borderBottom:i<byDate[date].length-1?`1px solid ${T.border}`:"none",
                       background:T.surf }}>
                       <div style={{ width:6, height:6, borderRadius:"50%", background:"#4DBF8A",
                         flexShrink:0, marginTop:8 }}/>
-                      <p style={{ fontSize:13, color:"#444", lineHeight:1.7 }}>{item.text}</p>
+                      <p style={{ fontSize:13, color:"#444", lineHeight:1.7,
+                        display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{item.text}</p>
                     </div>
                   </SwipeActions>
                 ))}
@@ -1168,6 +1258,7 @@ export default function App() {
           {tab==="profile"  && ProfileScreen()}
         </div>
         {EditModal()}
+        {PreviewOverlay({ preview, onClose: () => setPreview(null) })}
         <nav style={{
           position:"fixed", bottom:0, left:0, right:0, zIndex:50,
           background:T.surf, borderTop:`1px solid ${T.border}`,
