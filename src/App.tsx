@@ -10,8 +10,10 @@ import {
 const FontLoader = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    body { background:#EAE4D8; font-family:'Plus Jakarta Sans',sans-serif; }
+    * { font-family:'Plus Jakarta Sans',sans-serif; box-sizing:border-box; margin:0; padding:0;
+        -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    /* allow text selection only inside textareas and inputs */
+    input, textarea { -webkit-user-select:text; user-select:text; }
     .fd { font-family:'Bricolage Grotesque',sans-serif; }
     ::-webkit-scrollbar { width:0; }
     input, textarea { font-family:'Plus Jakarta Sans',sans-serif; }
@@ -20,6 +22,17 @@ const FontLoader = () => (
       to   { opacity:1; transform:scale(1) translateY(0); }
     }
     .fly-in { animation: flyIn .26s cubic-bezier(.34,1.56,.64,1) forwards; }
+    @keyframes pressing-pulse {
+      0%,100% { opacity:.04; } 50% { opacity:.14; }
+    }
+    @keyframes speed-line-fade {
+      0% { opacity:1; stroke-dashoffset:0; }
+      100% { opacity:0; stroke-dashoffset:-40; }
+    }
+    @keyframes trash-shake {
+      0%,100%{transform:rotate(0deg)} 20%{transform:rotate(-6deg)} 40%{transform:rotate(6deg)} 60%{transform:rotate(-4deg)} 80%{transform:rotate(3deg)}
+    }
+    .trash-absorb { animation: trash-shake .4s ease; }
   `}</style>
 );
 
@@ -88,67 +101,89 @@ const INIT = {
     { id:6, time:"16:00", title:"Review & Catat",   desc:"Tulis semua insight hari ini",  color:T.yellow,  done:false },
     { id:7, time:"20:00", title:"Free Learning",    desc:"YouTube / Podcast tech",        color:T.lav,     done:false },
   ],
+  bin: [],
 };
 
-/* ─── SWIPE ACTIONS (right=delete, left=edit) ────────────── */
-const SwipeActions = ({ onDelete, onEdit, children, radius = 0 }) => {
-  const [dx, setDx]   = useState(0);
-  const dragging      = useRef(false);
-  const startX        = useRef(0);
-  const THR           = 76;
+/* ─── SWIPE ACTIONS (left=edit, long-press=delete) ─────────── */
+const SwipeActions = ({ onDelete, onEdit, onLongPress, children, radius = 0 }) => {
+  const [dx, setDx]    = useState(0);
+  const [pressing, setP] = useState(false);
+  const elRef          = useRef(null);
+  const s              = useRef({ dragging:false, startX:0, startY:0, dx:0, timer:null });
+  const THR = 76, LONG_MS = 700;
 
-  const onTS = e => { dragging.current = true; startX.current = e.touches[0].clientX; };
-  const onTM = e => {
-    if (!dragging.current) return;
-    const d = e.touches[0].clientX - startX.current;
-    setDx(Math.max(-(THR + 8), Math.min(THR + 8, d)));
-  };
-  const onTE = () => {
-    dragging.current = false;
-    if (dx >=  THR * 0.72) onDelete?.();
-    if (dx <= -THR * 0.72) onEdit?.();
-    setDx(0);
-  };
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const clearPress = () => { clearTimeout(s.current.timer); setP(false); };
 
-  const dp = Math.min(Math.max( dx, 0) / THR, 1); // delete progress
-  const ep = Math.min(Math.max(-dx, 0) / THR, 1); // edit progress
+    const onTS = e => {
+      e.preventDefault(); // non-passive → blocks Android context-menu
+      const t = e.touches[0];
+      s.current = { ...s.current, dragging:true, startX:t.clientX, startY:t.clientY, dx:0 };
+      if (onLongPress) {
+        setP(true);
+        s.current.timer = setTimeout(() => {
+          setP(false);
+          const r = el.getBoundingClientRect();
+          onLongPress({ cx:r.left+r.width/2, cy:r.top+r.height/2 });
+        }, LONG_MS);
+      }
+    };
+    const onTM = e => {
+      if (!s.current.dragging) return;
+      const ddx = e.touches[0].clientX - s.current.startX;
+      const ddy = e.touches[0].clientY - s.current.startY;
+      if (Math.abs(ddy)>14 || Math.abs(ddx)>9) clearPress();
+      // left swipe only (negative dx)
+      s.current.dx = Math.max(-(THR+8), Math.min(0, ddx));
+      setDx(s.current.dx);
+    };
+    const onTE = () => {
+      s.current.dragging = false; clearPress();
+      if (onEdit && s.current.dx <= -THR*0.72) onEdit();
+      setDx(0); s.current.dx = 0;
+    };
+    const noCtx = e => e.preventDefault();
+    el.addEventListener('touchstart',  onTS,  { passive:false });
+    el.addEventListener('touchmove',   onTM,  { passive:false });
+    el.addEventListener('touchend',    onTE);
+    el.addEventListener('contextmenu', noCtx);
+    return () => {
+      el.removeEventListener('touchstart',  onTS);
+      el.removeEventListener('touchmove',   onTM);
+      el.removeEventListener('touchend',    onTE);
+      el.removeEventListener('contextmenu', noCtx);
+    };
+  }, [onEdit, onLongPress]);
+
+  const ep = Math.min(Math.max(-dx, 0) / THR, 1);
 
   return (
-    <div style={{ position:"relative", overflow:"hidden", borderRadius:radius }}>
-      {/* DELETE bg — left side, right swipe */}
-      {dx > 0 && (
-        <div style={{
-          position:"absolute", inset:0, borderRadius:radius,
-          background:`rgb(${Math.round(224-dp*20)},${Math.round(92-dp*10)},${Math.round(92-dp*10)})`,
-          display:"flex", alignItems:"center", paddingLeft: Math.max(dx * 0.38, 10),
-        }}>
-          <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,.18)",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            transform:`scale(${0.3+dp*0.7})`, opacity:Math.min(dx/18,1) }}>
-            <Trash2 size={19} color="white" strokeWidth={2.2}/>
-          </div>
-        </div>
-      )}
-      {/* EDIT bg — right side, left swipe */}
+    <div ref={elRef} style={{ position:"relative", overflow:"hidden", borderRadius:radius }}>
+      {pressing && <div style={{
+        position:"absolute",inset:0,borderRadius:radius,zIndex:5,pointerEvents:"none",
+        background:"rgba(11,61,40,.09)", animation:"pressing-pulse .5s ease-in-out infinite",
+      }}/>}
       {dx < 0 && (
         <div style={{
-          position:"absolute", inset:0, borderRadius:radius,
+          position:"absolute",inset:0,borderRadius:radius,
           background:`rgb(${Math.round(11+ep*30)},${Math.round(100+ep*30)},${Math.round(60+ep*20)})`,
-          display:"flex", alignItems:"center", justifyContent:"flex-end",
-          paddingRight: Math.max(-dx * 0.38, 10),
+          display:"flex",alignItems:"center",justifyContent:"flex-end",
+          paddingRight:Math.max(-dx*.38,10),
         }}>
-          <div style={{ width:42, height:42, borderRadius:"50%", background:"rgba(255,255,255,.18)",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            transform:`scale(${0.3+ep*0.7})`, opacity:Math.min(-dx/18,1) }}>
+          <div style={{ width:42,height:42,borderRadius:"50%",background:"rgba(255,255,255,.18)",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            transform:`scale(${0.3+ep*0.7})`,opacity:Math.min(-dx/18,1) }}>
             <Pencil size={17} color="white" strokeWidth={2.2}/>
           </div>
         </div>
       )}
-      {/* draggable content */}
-      <div onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
-        style={{ transform:`translateX(${dx}px)`,
-          transition:dragging.current?"none":"transform .35s cubic-bezier(.34,1.4,.64,1)",
-          position:"relative", zIndex:1 }}>
+      <div style={{
+        transform:`translateX(${dx}px)`,
+        transition:s.current.dragging?"none":"transform .35s cubic-bezier(.34,1.4,.64,1)",
+        position:"relative",zIndex:1,
+      }}>
         {children}
       </div>
     </div>
@@ -317,6 +352,207 @@ const PreviewOverlay = ({ preview, onClose }) => {
   );
 };
 
+/* ═══════════════════════════════════════════════════════════
+   CRUMPLE-TO-TRASH DELETE SYSTEM
+═══════════════════════════════════════════════════════════ */
+
+const TrashCanIcon = ({ lidDeg=0, lit=false, shaking=false }) => (
+  <div className={shaking?"trash-absorb":""}>
+    <svg viewBox="0 0 64 82" width={64} height={82}>
+      <ellipse cx="32" cy="80" rx="22" ry="5" fill="rgba(0,0,0,.13)"/>
+      {/* Lid — rotates open */}
+      <g style={{
+        transformOrigin:"60px 18px",
+        transform:`rotate(${-Math.abs(lidDeg)}deg)`,
+        transition: lidDeg===0 ? "transform .3s ease" : "none",
+      }}>
+        <rect x="6" y="11" width="52" height="11" rx="5.5"
+          fill={lit?"#4B5563":"#6B7280"} style={{transition:"fill .2s"}}/>
+        <rect x="22" y="3" width="20" height="10" rx="4"
+          fill={lit?"#4B5563":"#6B7280"} style={{transition:"fill .2s"}}/>
+      </g>
+      {/* Body */}
+      <rect x="8" y="22" width="48" height="56" rx="8"
+        fill={lit?"#6B7280":"#9CA3AF"} style={{transition:"fill .2s"}}/>
+      {/* Sheen */}
+      <rect x="14" y="28" width="6" height="44" rx="3" fill="rgba(255,255,255,.22)"/>
+      {/* Stripes */}
+      {[20,29,38,47].map(x=>(
+        <rect key={x} x={x} y="30" width="3" height="42" rx="1.5" fill="rgba(0,0,0,.11)"/>
+      ))}
+      {/* Top shadow */}
+      <rect x="8" y="22" width="48" height="10" rx="8 8 0 0" fill="rgba(0,0,0,.07)"/>
+    </svg>
+  </div>
+);
+
+const PAPER_BALL_IMG = "data:image/jpeg;base64,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";
+
+const PaperBall = ({ size=48 }) => (
+  <img
+    src={PAPER_BALL_IMG}
+    width={size} height={size}
+    style={{ borderRadius:"50%", objectFit:"cover",
+      boxShadow:"3px 6px 18px rgba(0,0,0,.3)",
+      display:"block", flexShrink:0 }}
+    alt=""
+  />
+);
+
+const SpeedLines = ({ x, y, dx, dy }) => {
+  if (!x) return null;
+  const angle = Math.atan2(dy, dx);
+  return (
+    <svg style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:490}} width="100%" height="100%">
+      {[-16,-9,-3,0,3,9,16].map((off,i) => {
+        const a = angle + off*(Math.PI/180);
+        const l = 68*(1-Math.abs(off)/22);
+        return (
+          <line key={i}
+            x1={x} y1={y}
+            x2={x-Math.cos(a)*l} y2={y-Math.sin(a)*l}
+            stroke={i===3?"rgba(20,20,20,.58)":"rgba(20,20,20,.22)"}
+            strokeWidth={i===3?2.2:1}
+            strokeLinecap="round"
+            strokeDasharray="40"
+            style={{animation:"speed-line-fade .45s ease-out forwards"}}
+          />
+        );
+      })}
+    </svg>
+  );
+};
+
+const TRASH_RIGHT = 18;
+const TRASH_BOTTOM_FROM_VIEWPORT = 90;
+
+const DeleteOverlay = ({ flow, onDone, onCancel }) => {
+  const [phase, setPhase]   = useState("crumpling");
+  const [ball, setBall]     = useState({ x:flow.cx, y:flow.cy });
+  const [lidDeg, setLidDeg] = useState(0);
+  const [shaking, setShaking] = useState(false);
+  const [lines, setLines]   = useState(null);
+  const dragging  = useRef(false);
+  const history   = useRef([]);
+  const rafId     = useRef(null);
+
+  // crumpling → ready
+  useEffect(() => {
+    const t = setTimeout(() => setPhase("ready"), 580);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => () => cancelAnimationFrame(rafId.current), []);
+
+  const trashCenter = () => ({
+    x: window.innerWidth  - TRASH_RIGHT - 32,
+    y: window.innerHeight - TRASH_BOTTOM_FROM_VIEWPORT - 41,
+  });
+  const dist = (x,y) => { const t=trashCenter(); return Math.hypot(x-t.x, y-t.y); };
+
+  const openLid = (x,y) => setLidDeg(Math.max(0, Math.min(48, (130-dist(x,y))/2.7)));
+
+  const onTS = e => {
+    if (phase!=="ready") return;
+    e.preventDefault(); e.stopPropagation();
+    dragging.current = true; history.current = [];
+    setPhase("dragging");
+  };
+  const onTM = e => {
+    if (!dragging.current) return;
+    e.preventDefault();
+    const {clientX:x, clientY:y} = e.touches[0];
+    setBall({x,y});
+    history.current = [...history.current.slice(-6), {x,y,ts:Date.now()}];
+    openLid(x,y);
+  };
+  const onTE = e => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    const {x,y} = ball;
+    if (dist(x,y) < 62) { absorb(); return; }
+    // velocity check
+    const h = history.current;
+    if (h.length>=2) {
+      const dt = Math.max((h[h.length-1].ts-h[0].ts)/1000, .01);
+      const vx=(h[h.length-1].x-h[0].x)/dt, vy=(h[h.length-1].y-h[0].y)/dt;
+      const sp = Math.hypot(vx,vy);
+      const tc = trashCenter();
+      const toTrash = Math.atan2(tc.y-y, tc.x-x);
+      const thrown  = Math.atan2(vy,vx);
+      const diff = Math.abs(((toTrash-thrown+Math.PI*3)%(Math.PI*2))-Math.PI);
+      if (sp>380 && diff<1.3) {
+        setLines({x,y,dx:vx/sp,dy:vy/sp});
+        setTimeout(()=>setLines(null),520);
+        throwBall(x,y,tc.x,tc.y); return;
+      }
+    }
+    setLidDeg(0); setPhase("ready");
+  };
+
+  const throwBall = (fx,fy,tx,ty) => {
+    setPhase("throwing");
+    const start=Date.now(), DUR=460;
+    const arc = -Math.hypot(tx-fx,ty-fy)*0.38;
+    const step = () => {
+      const t = Math.min((Date.now()-start)/DUR,1);
+      const e2 = t<.5?2*t*t:-1+(4-2*t)*t;
+      setBall({ x:fx+(tx-fx)*e2, y:fy+(ty-fy)*e2+arc*Math.sin(Math.PI*t) });
+      if (t>0.7) setLidDeg(Math.min(48,(t-.7)*160));
+      if (t<1) { rafId.current=requestAnimationFrame(step); }
+      else absorb();
+    };
+    rafId.current=requestAnimationFrame(step);
+  };
+
+  const absorb = () => {
+    setPhase("trashing"); setLidDeg(48); setShaking(true);
+    setTimeout(()=>setShaking(false),400);
+    setTimeout(()=>{ setLidDeg(0); flow.onConfirm(); onDone(); },680);
+  };
+
+  const isCrumpling = phase==="crumpling";
+  const isTrashing  = phase==="trashing";
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={()=>{ if(phase==="ready"){setLidDeg(0);onCancel();} }}
+        style={{ position:"fixed",inset:0,background:"rgba(0,0,0,.3)",zIndex:350 }}>
+        <p style={{ textAlign:"center",marginTop:"14%",color:"rgba(255,255,255,.48)",
+          fontSize:12,fontWeight:600,userSelect:"none",pointerEvents:"none" }}>
+          {isCrumpling?"Crumpling note...":"Seret ke tempat sampah · atau lempar kesana"}
+        </p>
+      </div>
+      {/* Speed lines */}
+      {lines && <SpeedLines x={lines.x} y={lines.y} dx={lines.dx} dy={lines.dy}/>}
+      {/* Trash can */}
+      <div style={{ position:"fixed",right:TRASH_RIGHT,bottom:TRASH_BOTTOM_FROM_VIEWPORT,
+        zIndex:360,pointerEvents:"none",
+        filter:lidDeg>6?"drop-shadow(0 0 10px rgba(11,61,40,.45))":"none",
+        transition:"filter .2s" }}>
+        <TrashCanIcon lidDeg={lidDeg} lit={lidDeg>6} shaking={shaking}/>
+      </div>
+      {/* Paper ball */}
+      <div
+        onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+        style={{
+          position:"fixed",
+          left:ball.x-24, top:ball.y-24,
+          zIndex:380, touchAction:"none", cursor:"grab",
+          transition: isCrumpling
+            ? "transform .56s cubic-bezier(.34,1.2,.64,1)"
+            : isTrashing ? "transform .28s ease-in, opacity .28s ease-in"
+            : phase==="throwing" ? "none" : "none",
+          transform:`scale(${isCrumpling?.25:isTrashing?0:1})`,
+          opacity: isTrashing?0:1,
+        }}>
+        <PaperBall size={48}/>
+      </div>
+    </>
+  );
+};
+
 /* ─── CARD CORNER DELETE BTN ─────────────────────────────── */
 // Sits flush in the top-right corner, border-radius mirrors the card corner
 const UNUSED_CardDelBtn = ({ onDelete }) => {
@@ -406,6 +642,8 @@ export default function App() {
   const [modal, setModal]       = useState(null);
   const [editTarget, setEditTarget] = useState(null);
   const [preview, setPreview]       = useState(null);
+  const [deleteFlow, setDeleteFlow] = useState(null); // {cx,cy,onConfirm}
+  const [profileView, setProfileView] = useState(null); // null | "bin"
   const [gid, setGid]               = useState(null);    // group id for addNote
   const [f, setF]             = useState({ title:"", body:"", emoji:"", name:"", learn:"", target:"", time:"", stitle:"", sdesc:"", newName:"" });
   const up = k => e => setF(p => ({ ...p, [k]: e.target.value }));
@@ -422,12 +660,61 @@ export default function App() {
   const toggleTarget = id => setData(p => ({ ...p, targets: p.targets.map(t => t.id===id?{...t,done:!t.done}:t) }));
   const toggleSched  = id => setData(p => ({ ...p, schedule: p.schedule.map(s => s.id===id?{...s,done:!s.done}:s) }));
 
-  const delGroup   = id      => setData(p => ({ ...p, groups:   p.groups.filter(g => g.id!==id) }));
-  const delNote    = (gi,ni) => setData(p => ({ ...p, groups:   p.groups.map(g => g.id===gi?{...g,notes:g.notes.filter(n=>n.id!==ni)}:g) }));
-  const delGeneral = id      => setData(p => ({ ...p, general:  p.general.filter(n => n.id!==id) }));
-  const delLearned = id      => setData(p => ({ ...p, learned:  p.learned.filter(l => l.id!==id) }));
-  const delTarget  = id      => setData(p => ({ ...p, targets:  p.targets.filter(t => t.id!==id) }));
-  const delSched   = id      => setData(p => ({ ...p, schedule: p.schedule.filter(s => s.id!==id) }));
+  const DAYS30 = 30 * 24 * 60 * 60 * 1000;
+  const mkBinEntry = (type, data, meta={}) => ({
+    binId: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    type, deletedAt: Date.now(), data, meta,
+  });
+
+  const delGroup   = id      => setData(p => {
+    const grp = p.groups.find(g => g.id===id);
+    return { ...p, groups: p.groups.filter(g=>g.id!==id),
+      bin: [...(p.bin||[]), mkBinEntry("group", grp)] };
+  });
+  const delNote    = (gi,ni) => setData(p => {
+    const grp = p.groups.find(g=>g.id===gi);
+    const note = grp?.notes.find(n=>n.id===ni);
+    return { ...p, groups: p.groups.map(g=>g.id===gi?{...g,notes:g.notes.filter(n=>n.id!==ni)}:g),
+      bin: [...(p.bin||[]), mkBinEntry("note-group", note, { gid:gi, groupName:grp?.name, groupColor:grp?.color })] };
+  });
+  const delGeneral = id      => setData(p => {
+    const note = p.general.find(n=>n.id===id);
+    return { ...p, general: p.general.filter(n=>n.id!==id),
+      bin: [...(p.bin||[]), mkBinEntry("note-general", note)] };
+  });
+  const delLearned = id      => setData(p => {
+    const item = p.learned.find(l=>l.id===id);
+    return { ...p, learned: p.learned.filter(l=>l.id!==id),
+      bin: [...(p.bin||[]), mkBinEntry("learned", item)] };
+  });
+  const delTarget  = id      => setData(p => {
+    const item = p.targets.find(t=>t.id===id);
+    return { ...p, targets: p.targets.filter(t=>t.id!==id),
+      bin: [...(p.bin||[]), mkBinEntry("target", item)] };
+  });
+  const delSched   = id      => setData(p => {
+    const item = p.schedule.find(s=>s.id===id);
+    return { ...p, schedule: p.schedule.filter(s=>s.id!==id),
+      bin: [...(p.bin||[]), mkBinEntry("sched", item)] };
+  });
+
+  const restoreFromBin = (entry) => setData(p => {
+    const { type, data:d, meta } = entry;
+    const bin = (p.bin||[]).filter(b=>b.binId!==entry.binId);
+    if (type==="learned")      return { ...p, bin, learned:  [d, ...p.learned] };
+    if (type==="note-general") return { ...p, bin, general:  [d, ...p.general] };
+    if (type==="target")       return { ...p, bin, targets:  [...p.targets, d] };
+    if (type==="group")        return { ...p, bin, groups:   [...p.groups, d] };
+    if (type==="sched")        return { ...p, bin, schedule: [...p.schedule, d].sort((a,b)=>a.time.localeCompare(b.time)) };
+    if (type==="note-group") {
+      const grpExists = p.groups.some(g=>g.id===meta.gid);
+      if (grpExists) return { ...p, bin, groups: p.groups.map(g=>g.id===meta.gid?{...g,notes:[d,...g.notes]}:g) };
+      return { ...p, bin, general: [d, ...p.general] }; // fallback: group deleted, restore to general
+    }
+    return { ...p, bin };
+  });
+  const emptyBin   = () => setData(p => ({ ...p, bin:[] }));
+  const permDelete = (binId) => setData(p => ({ ...p, bin:(p.bin||[]).filter(b=>b.binId!==binId) }));
 
   const addGroup = () => {
     if (!f.name.trim()) return;
@@ -475,6 +762,7 @@ export default function App() {
   /* ── edit handlers ── */
   const closeEdit = () => setEditTarget(null);
   const upEdit = k => e => setEditTarget(p => ({ ...p, [k]: e.target.value }));
+  const initDeleteFlow = (pos, onConfirm) => setDeleteFlow({ ...pos, onConfirm });
 
   const saveEdit = () => {
     if (!editTarget) return;
@@ -725,7 +1013,8 @@ export default function App() {
               </div>
             )}
             {grp.notes.map(n => (
-              <SwipeActions key={n.id} onDelete={() => delNote(grp.id, n.id)} onEdit={() => setEditTarget({type:"note-group", id:n.id, gid:grp.id, title:n.title, body:n.body})} radius={20}>
+              <SwipeActions key={n.id} onDelete={() => delNote(grp.id, n.id)} onEdit={() => setEditTarget({type:"note-group", id:n.id, gid:grp.id, title:n.title, body:n.body})}
+                onLongPress={pos => initDeleteFlow(pos, () => delNote(grp.id, n.id))} radius={20}>
                 <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}
                   onClick={() => setPreview({type:"note", ...n, color:grp.color, groupName:grp.name})}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
@@ -782,7 +1071,8 @@ export default function App() {
             </button>
             {data.general.map(n => (
               <SwipeActions key={n.id} onDelete={() => delGeneral(n.id)} radius={20}
-                onEdit={() => setEditTarget({type:"note-general", id:n.id, title:n.title, body:n.body})}>
+                onEdit={() => setEditTarget({type:"note-general", id:n.id, title:n.title, body:n.body})}
+                onLongPress={pos => initDeleteFlow(pos, () => delGeneral(n.id))}>
                 <Card p={20} style={{ borderRadius:20, boxShadow:"none" }}
                   onClick={() => setPreview({type:"general", ...n})}>
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
@@ -899,7 +1189,8 @@ export default function App() {
           )}
           {todayLearned.map((item, i) => (
             <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
-              onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
+              onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}
+              onLongPress={pos => initDeleteFlow(pos, () => delLearned(item.id))}>
               <div onClick={() => setPreview({type:"learned", ...item})}
                 style={{ display:"flex", gap:12, padding:"10px 0", cursor:"pointer",
                 borderBottom:i<todayLearned.length-1?`1px solid ${T.border}`:"none", background:T.surf }}>
@@ -929,7 +1220,8 @@ export default function App() {
           </div>
           {data.targets.map((t, i) => (
             <SwipeActions key={t.id} onDelete={() => delTarget(t.id)}
-              onEdit={() => setEditTarget({type:"target", id:t.id, title:t.title})}>
+              onEdit={() => setEditTarget({type:"target", id:t.id, title:t.title})}
+              onLongPress={pos => initDeleteFlow(pos, () => delTarget(t.id))}>
               <div onClick={() => toggleTarget(t.id)}
                 style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", cursor:"pointer",
                   borderBottom:i<data.targets.length-1?`1px solid ${T.border}`:"none", background:T.surf }}>
@@ -1005,7 +1297,8 @@ export default function App() {
               </div>
               <div style={{ flex:1 }}>
                 <SwipeActions onDelete={() => delSched(s.id)} radius={18}
-                  onEdit={() => setEditTarget({type:"sched", id:s.id, time:s.time, title:s.title, desc:s.desc})}>
+                  onEdit={() => setEditTarget({type:"sched", id:s.id, time:s.time, title:s.title, desc:s.desc})}
+                  onLongPress={pos => initDeleteFlow(pos, () => delSched(s.id))}>
                   <div onClick={() => toggleSched(s.id)} style={{ cursor:"pointer" }}>
                     <Card bg={s.done?"#F5F0E8":s.color} p={14} style={{ borderRadius:18, boxShadow:"none" }}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -1132,7 +1425,8 @@ export default function App() {
                 </div>
                 {byDate[date].map((item, i) => (
                   <SwipeActions key={item.id} onDelete={() => delLearned(item.id)}
-                    onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}>
+                    onEdit={() => setEditTarget({type:"learned", id:item.id, text:item.text})}
+                    onLongPress={pos => initDeleteFlow(pos, () => delLearned(item.id))}>
                     <div onClick={() => setPreview({type:"learned", ...item})}
                       style={{ display:"flex", gap:10, padding:"10px 0", cursor:"pointer",
                       borderBottom:i<byDate[date].length-1?`1px solid ${T.border}`:"none",
@@ -1147,6 +1441,23 @@ export default function App() {
               </div>
             ))}
           </Card>
+
+          {/* ── Trash button (subtle) ── */}
+          {(() => {
+            const binCount = (data.bin||[]).filter(b => Date.now()-b.deletedAt < DAYS30).length;
+            return (
+              <button onClick={() => setProfileView("bin")} style={{
+                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                width:"100%", background:"none", border:`1.5px solid ${T.border}`,
+                borderRadius:16, padding:"14px 0", cursor:"pointer",
+              }}>
+                <Trash2 size={15} color={T.muted}/>
+                <span style={{ fontSize:13, fontWeight:700, color:T.muted }}>
+                  Trash{binCount > 0 ? ` (${binCount})` : ""}
+                </span>
+              </button>
+            );
+          })()}
 
           {/* Motivational banner */}
           <Card bg={T.green} p={24}>
@@ -1257,10 +1568,88 @@ export default function App() {
           {tab==="notes"    && NotesScreen()}
           {tab==="learn"    && LearnScreen()}
           {tab==="schedule" && ScheduleScreen()}
-          {tab==="profile"  && ProfileScreen()}
+          {tab==="profile"  && profileView===null  && ProfileScreen()}
+          {tab==="profile"  && profileView==="bin" && (() => {
+            const activeBin = (data.bin||[]).filter(b => Date.now()-b.deletedAt < DAYS30);
+            const TYPE_LABEL = { learned:"Insight", "note-group":"Note (Grup)", "note-general":"General Note", target:"Target", sched:"Schedule", group:"Grup Note" };
+            const itemLabel  = e => e.type==="learned" ? e.data?.text : (e.data?.title || e.data?.name || "Item");
+            return (
+              <div style={{ flex:1, overflowY:"auto" }}>
+                <Hero pt={48}>
+                  <button onClick={() => setProfileView(null)} style={{ display:"flex", alignItems:"center", gap:6,
+                    background:"rgba(255,255,255,.1)", border:"none", borderRadius:999,
+                    padding:"6px 14px", cursor:"pointer", color:"#A8D4BC", fontSize:12, fontWeight:700, marginBottom:16 }}>
+                    <ChevronLeft size={14}/> Back
+                  </button>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+                    <div>
+                      <h1 className="fd" style={{ color:"white", fontSize:36, fontWeight:800, letterSpacing:"-.02em" }}>TRASH</h1>
+                      <p style={{ color:"#A8D4BC", fontSize:12, marginTop:4 }}>
+                        {activeBin.length} item · Auto-delete setelah 30 hari
+                      </p>
+                    </div>
+                    {activeBin.length > 0 && (
+                      <button onClick={emptyBin} style={{ background:"rgba(224,92,92,.2)", border:"none", borderRadius:999,
+                        padding:"7px 16px", cursor:"pointer", color:T.red, fontSize:12, fontWeight:800 }}>
+                        Empty Bin
+                      </button>
+                    )}
+                  </div>
+                </Hero>
+                <div style={{ padding:"20px 16px", maxWidth:640, margin:"0 auto", display:"flex", flexDirection:"column", gap:10 }}>
+                  {activeBin.length === 0 && (
+                    <div style={{ textAlign:"center", padding:"60px 0", color:T.muted }}>
+                      <Trash2 size={44} color={T.border} style={{ margin:"0 auto 14px" }}/>
+                      <p style={{ fontWeight:700, fontSize:15, marginBottom:6 }}>Trash kosong</p>
+                      <p style={{ fontSize:13 }}>Item yang dihapus akan muncul di sini</p>
+                    </div>
+                  )}
+                  {activeBin.map(entry => {
+                    const daysLeft = Math.max(1, Math.ceil((DAYS30-(Date.now()-entry.deletedAt))/(24*60*60*1000)));
+                    const label    = itemLabel(entry) || "";
+                    return (
+                      <Card key={entry.binId} p={18}>
+                        <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:8 }}>
+                          <div style={{ background:T.border, borderRadius:999, padding:"2px 9px" }}>
+                            <span style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:".06em" }}>
+                              {TYPE_LABEL[entry.type]||entry.type}
+                            </span>
+                          </div>
+                          <span style={{ fontSize:11, color:T.muted }}>{daysLeft}d left</span>
+                        </div>
+                        <p style={{ fontSize:14, color:T.text, lineHeight:1.6, marginBottom:14,
+                          display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden" }}>
+                          {label}
+                        </p>
+                        <div style={{ display:"flex", gap:8 }}>
+                          <button onClick={() => restoreFromBin(entry)} style={{ flex:1, background:T.green,
+                            color:"white", border:"none", borderRadius:12, padding:"10px 0", fontSize:13, fontWeight:800, cursor:"pointer" }}>
+                            Restore
+                          </button>
+                          <button onClick={() => permDelete(entry.binId)} style={{ flex:1, background:"none",
+                            color:T.red, border:`1.5px solid ${T.red}`, borderRadius:12,
+                            padding:"9px 0", fontSize:13, fontWeight:800, cursor:"pointer" }}>
+                            Hapus Permanen
+                          </button>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                  <div style={{ height:8 }}/>
+                </div>
+              </div>
+            );
+          })()}
         </div>
         {EditModal()}
         {PreviewOverlay({ preview, onClose: () => setPreview(null) })}
+        {deleteFlow && (
+          <DeleteOverlay
+            flow={deleteFlow}
+            onDone={() => setDeleteFlow(null)}
+            onCancel={() => setDeleteFlow(null)}
+          />
+        )}
         <nav style={{
           position:"fixed", bottom:0, left:0, right:0, zIndex:50,
           background:T.surf, borderTop:`1px solid ${T.border}`,
@@ -1270,7 +1659,7 @@ export default function App() {
           <div style={{ display:"flex", justifyContent:"space-around", alignItems:"center", maxWidth:640, margin:"0 auto" }}>
             {navs.map(({ id, Icon, label }) => (
               <NavItem key={id} icon={Icon} label={label} active={tab===id}
-                onClick={() => { setTab(id); setNoteView(null); setModal(null); }}/>
+                onClick={() => { setTab(id); setNoteView(null); setModal(null); setProfileView(null); }}/>
             ))}
           </div>
         </nav>
