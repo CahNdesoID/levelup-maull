@@ -12,7 +12,10 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat.recommended,
+      // "recommended-latest" is the flat-config export in
+      // eslint-plugin-react-hooks 5.2+; the older `configs.flat.recommended`
+      // path no longer exists and made this config fail to load at all.
+      reactHooks.configs["recommended-latest"],
       reactRefresh.configs.vite,
     ],
     languageOptions: {
