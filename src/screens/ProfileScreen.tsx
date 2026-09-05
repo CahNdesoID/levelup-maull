@@ -8,7 +8,7 @@ import { ProfileEditModal } from "../components/ProfileEditModal";
 import { SectionHeader } from "../components/SectionHeader";
 import { SwipeActions } from "../components/SwipeActions";
 import { MAX_CONTENT_WIDTH, T } from "../constants/theme";
-import { dateScore } from "../utils/date";
+import { isoToLong } from "../utils/date";
 import { useStore } from "../store/context";
 import type { EditTarget, LearnedItem, Preview } from "../types";
 
@@ -39,7 +39,9 @@ export const ProfileScreen = ({ onOpenTrash, onPreview, onEdit }: ProfileScreenP
     (acc[item.date] ??= []).push(item);
     return acc;
   }, {});
-  const dates = Object.keys(byDate).sort((a, b) => dateScore(b) - dateScore(a));
+  // ISO dates sort chronologically as plain strings, so newest-first is just a
+  // reverse string compare — and it now orders correctly across year bounds.
+  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
 
   const stats = [
     { v: String(allNotesCount), l: "Total Notes", I: BookOpen, bg: T.sage },
@@ -201,7 +203,9 @@ export const ProfileScreen = ({ onOpenTrash, onPreview, onEdit }: ProfileScreenP
                   }}
                 >
                   <CalendarDays size={11} color={T.muted} />
-                  <span style={{ fontSize: 11, fontWeight: 800, color: T.muted }}>{date}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: T.muted }}>
+                    {isoToLong(date)}
+                  </span>
                 </div>
                 <div style={{ flex: 1, height: 1, background: T.border }} />
               </div>

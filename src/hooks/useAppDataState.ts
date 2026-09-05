@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GRP_COLORS, T, TRASH_TTL_MS } from "../constants/theme";
 import { createId } from "../utils/id";
-import { todayLabel } from "../utils/date";
+import { todayIso } from "../utils/date";
 import { readLocalSnapshot, remoteAdapter, writeLocalSnapshot } from "../sync";
 import type { SyncState } from "../sync";
 import type {
@@ -125,8 +125,8 @@ export const useAppDataState = (): AppStore => {
   );
 
   const todayLearned = useMemo(() => {
-    const today = todayLabel();
-    return data.learned.filter((l) => l.date === today);
+    const today = todayIso();
+    return data.learned.filter((item) => item.date === today);
   }, [data.learned]);
 
   const activeBin = useMemo(
@@ -157,7 +157,7 @@ export const useAppDataState = (): AppStore => {
   const addNote = useCallback(
     (groupId: Id | null, title: string, body: string): boolean => {
       if (!title.trim()) return false;
-      const note: Note = { id: createId(), title: title.trim(), body, date: todayLabel() };
+      const note: Note = { id: createId(), title: title.trim(), body, date: todayIso() };
       setData((p) =>
         groupId === null
           ? { ...p, general: [...p.general, note] }
@@ -177,7 +177,7 @@ export const useAppDataState = (): AppStore => {
     if (!text.trim()) return false;
     setData((p) => ({
       ...p,
-      learned: [{ id: createId(), text: text.trim(), date: todayLabel() }, ...p.learned],
+      learned: [{ id: createId(), text: text.trim(), date: todayIso() }, ...p.learned],
     }));
     return true;
   }, []);

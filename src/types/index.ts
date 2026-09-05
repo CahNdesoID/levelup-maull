@@ -10,12 +10,14 @@ export type Id = string;
 
 /* ─── Entities ───────────────────────────────────────────── */
 
+/** ISO calendar date, `YYYY-MM-DD`. Sorts chronologically as a plain string. */
+export type IsoDate = string;
+
 export interface Note {
   id: Id;
   title: string;
   body: string;
-  /** Human label produced by `fmt()`, e.g. "17 May". */
-  date: string;
+  date: IsoDate;
 }
 
 export interface Group {
@@ -29,7 +31,7 @@ export interface Group {
 export interface LearnedItem {
   id: Id;
   text: string;
-  date: string;
+  date: IsoDate;
 }
 
 export interface Target {
@@ -130,9 +132,9 @@ export type EditTarget =
   | { type: "sched"; id: Id; time: string; title: string; desc: string };
 
 export type Preview =
-  | { type: "note"; title: string; body: string; date: string; color: string; groupName: string }
-  | { type: "general"; title: string; body: string; date: string }
-  | { type: "learned"; text: string; date: string };
+  | { type: "note"; title: string; body: string; date: IsoDate; color: string; groupName: string }
+  | { type: "general"; title: string; body: string; date: IsoDate }
+  | { type: "learned"; text: string; date: IsoDate };
 
 export type ModalId =
   | "addGroup"

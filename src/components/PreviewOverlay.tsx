@@ -1,4 +1,5 @@
 import { T } from "../constants/theme";
+import { isoToLong } from "../utils/date";
 import type { Preview } from "../types";
 
 interface PreviewOverlayProps {
@@ -134,7 +135,7 @@ export const PreviewOverlay = ({ preview, onClose }: PreviewOverlayProps) => {
             </p>
             <div style={{ paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
               <span style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>
-                {preview.date}
+                {isoToLong(preview.date)}
               </span>
             </div>
           </>
@@ -157,7 +158,7 @@ export const PreviewOverlay = ({ preview, onClose }: PreviewOverlayProps) => {
             </p>
             <div style={{ paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
               <span style={{ fontSize: 12, color: T.muted, fontWeight: 600 }}>
-                {preview.date}
+                {isoToLong(preview.date)}
               </span>
             </div>
           </>

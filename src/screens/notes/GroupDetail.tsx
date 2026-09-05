@@ -6,6 +6,7 @@ import { Modal } from "../../components/Modal";
 import { SwipeActions } from "../../components/SwipeActions";
 import { ButtonRow, TextArea, TextInput } from "../../components/FormControls";
 import { MAX_CONTENT_WIDTH, T } from "../../constants/theme";
+import { isoToDisplay } from "../../utils/date";
 import { useStore } from "../../store/context";
 import type { EditTarget, Id, Preview } from "../../types";
 
@@ -199,7 +200,7 @@ export const GroupDetail = ({ groupId, onBack, onPreview, onEdit }: GroupDetailP
                   </p>
                 </div>
                 <span style={{ fontSize: 11, color: T.muted, flexShrink: 0, marginLeft: 8 }}>
-                  {n.date}
+                  {isoToDisplay(n.date)}
                 </span>
               </div>
               <p

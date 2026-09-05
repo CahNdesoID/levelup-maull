@@ -1,5 +1,5 @@
 import { T } from "./theme";
-import { daysAgoLabel, todayLabel } from "../utils/date";
+import { daysAgoIso, todayIso } from "../utils/date";
 import type { AppData } from "../types";
 
 /**
@@ -11,10 +11,10 @@ import type { AppData } from "../types";
  * later reset would hand out again.
  */
 export const createSeedData = (): AppData => {
-  const today = todayLabel();
-  const d1 = daysAgoLabel(1);
-  const d2 = daysAgoLabel(2);
-  const d3 = daysAgoLabel(3);
+  const today = todayIso();
+  const d1 = daysAgoIso(1);
+  const d2 = daysAgoIso(2);
+  const d3 = daysAgoIso(3);
 
   return {
     groups: [

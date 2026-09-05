@@ -1,6 +1,6 @@
 import { migrateAvatar, migrateData } from "../data/migrate";
 import { DEFAULT_USER_NAME } from "../constants/seed";
-import { fmt } from "../utils/date";
+import { todayIso } from "../utils/date";
 import type { Snapshot } from "../types";
 
 /**
@@ -34,7 +34,8 @@ export const exportBackup = (snapshot: Snapshot): void => {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `levelup-backup-${fmt().replace(/\s+/g, "-").toLowerCase()}.json`;
+  // ISO in the filename means backups sort chronologically in a file manager.
+  anchor.download = `levelup-backup-${todayIso()}.json`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

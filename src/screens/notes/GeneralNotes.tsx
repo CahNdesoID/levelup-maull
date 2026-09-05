@@ -6,6 +6,7 @@ import { Modal } from "../../components/Modal";
 import { SwipeActions } from "../../components/SwipeActions";
 import { ButtonRow, TextArea, TextInput } from "../../components/FormControls";
 import { MAX_CONTENT_WIDTH, T } from "../../constants/theme";
+import { isoToDisplay } from "../../utils/date";
 import { useStore } from "../../store/context";
 import type { EditTarget, Preview } from "../../types";
 
@@ -135,7 +136,7 @@ export const GeneralNotes = ({ onBack, onPreview, onEdit }: GeneralNotesProps) =
                 <p className="fd" style={{ fontSize: 16, fontWeight: 800, color: T.green }}>
                   {n.title}
                 </p>
-                <span style={{ fontSize: 11, color: T.muted }}>{n.date}</span>
+                <span style={{ fontSize: 11, color: T.muted }}>{isoToDisplay(n.date)}</span>
               </div>
               <p
                 style={{

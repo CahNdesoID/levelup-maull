@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { ReactNode, TouchEvent } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 interface SwipeActionsProps {
@@ -12,36 +12,102 @@ interface SwipeActionsProps {
 const THRESHOLD = 76;
 /** Fraction of the threshold that must be crossed to commit the action. */
 const COMMIT_RATIO = 0.72;
+/** Movement before a gesture is classified, so a tap is never a tiny swipe. */
+const SLOP = 6;
+
+type Axis = "undecided" | "horizontal" | "vertical";
 
 /**
  * Swipe a row right to delete, left to edit.
  *
- * Touch only — there is no pointer/mouse fallback, so these actions are
- * unreachable on a desktop browser. Every action exposed here is also reachable
- * from a tap target elsewhere in the UI, so this is a convenience rather than
- * the sole path.
+ * Built on Pointer Events, so it works with a mouse as well as touch — the
+ * earlier touch-only version left both actions unreachable on desktop.
+ *
+ * Two details make it coexist with the tap handlers on the rows it wraps:
+ * `touch-action: pan-y` lets the browser keep vertical scrolling while we claim
+ * horizontal movement, and a click that follows an actual drag is swallowed in
+ * the capture phase so a swipe never also opens the item.
  */
 export const SwipeActions = ({ onDelete, onEdit, children, radius = 0 }: SwipeActionsProps) => {
   const [dx, setDx] = useState(0);
-  const dragging = useRef(false);
+
+  const active = useRef(false);
   const startX = useRef(0);
+  const startY = useRef(0);
+  const axis = useRef<Axis>("undecided");
+  const dragged = useRef(false);
+  // Mirrors `dx` for the pointerup handler, which needs the committed value
+  // without waiting for a re-render.
+  const offset = useRef(0);
 
-  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    dragging.current = true;
-    startX.current = e.touches[0].clientX;
+  const applyOffset = (value: number) => {
+    offset.current = value;
+    setDx(value);
   };
 
-  const handleTouchMove = (e: TouchEvent<HTMLDivElement>) => {
-    if (!dragging.current) return;
-    const delta = e.touches[0].clientX - startX.current;
-    setDx(Math.max(-(THRESHOLD + 8), Math.min(THRESHOLD + 8, delta)));
+  const reset = () => {
+    active.current = false;
+    axis.current = "undecided";
+    applyOffset(0);
   };
 
-  const handleTouchEnd = () => {
-    dragging.current = false;
-    if (dx >= THRESHOLD * COMMIT_RATIO) onDelete?.();
-    if (dx <= -THRESHOLD * COMMIT_RATIO) onEdit?.();
-    setDx(0);
+  const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    // Ignore secondary mouse buttons; let the context menu behave normally.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    active.current = true;
+    dragged.current = false;
+    axis.current = "undecided";
+    startX.current = e.clientX;
+    startY.current = e.clientY;
+  };
+
+  const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (!active.current) return;
+
+    const deltaX = e.clientX - startX.current;
+    const deltaY = e.clientY - startY.current;
+
+    if (axis.current === "undecided") {
+      if (Math.abs(deltaX) < SLOP && Math.abs(deltaY) < SLOP) return;
+      axis.current = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      if (axis.current === "horizontal") {
+        // Keep receiving moves even if the pointer leaves this element.
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    }
+
+    if (axis.current !== "horizontal") return;
+
+    dragged.current = true;
+    applyOffset(Math.max(-(THRESHOLD + 8), Math.min(THRESHOLD + 8, deltaX)));
+  };
+
+  const handlePointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    if (!active.current) return;
+
+    if (axis.current === "horizontal") {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      if (offset.current >= THRESHOLD * COMMIT_RATIO) onDelete?.();
+      if (offset.current <= -THRESHOLD * COMMIT_RATIO) onEdit?.();
+    }
+
+    reset();
+  };
+
+  // Fires when the browser takes the gesture over — a vertical scroll, mostly.
+  const handlePointerCancel = () => {
+    if (!active.current) return;
+    reset();
+  };
+
+  const handleClickCapture = (e: MouseEvent<HTMLDivElement>) => {
+    if (!dragged.current) return;
+    // A drag just ended; don't let it also count as a tap on the row.
+    e.stopPropagation();
+    e.preventDefault();
+    dragged.current = false;
   };
 
   const deleteProgress = Math.min(Math.max(dx, 0) / THRESHOLD, 1);
@@ -111,14 +177,18 @@ export const SwipeActions = ({ onDelete, onEdit, children, radius = 0 }: SwipeAc
       )}
 
       <div
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
         style={{
           transform: `translateX(${dx}px)`,
-          transition: dragging.current ? "none" : "transform .35s cubic-bezier(.34,1.4,.64,1)",
+          transition: active.current ? "none" : "transform .35s cubic-bezier(.34,1.4,.64,1)",
           position: "relative",
           zIndex: 1,
+          // The browser keeps vertical panning; horizontal is ours.
+          touchAction: "pan-y",
         }}
       >
         {children}

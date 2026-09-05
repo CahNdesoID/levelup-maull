@@ -1,5 +1,6 @@
 import { createSeedData } from "../constants/seed";
 import { createId } from "../utils/id";
+import { ISO_DATE_RE, legacyLabelToIso, todayIso } from "../utils/date";
 import { T } from "../constants/theme";
 import type {
   AppData,
@@ -38,13 +39,24 @@ const asId = (v: unknown): string => {
   return createId();
 };
 
+/**
+ * Accepts an ISO date as-is, upgrades a legacy `"17 May"` label, and falls back
+ * to today for anything unreadable — an entry with a broken date is still worth
+ * keeping.
+ */
+const asDate = (v: unknown): string => {
+  if (typeof v !== "string") return todayIso();
+  if (ISO_DATE_RE.test(v)) return v;
+  return legacyLabelToIso(v) ?? todayIso();
+};
+
 const toNote = (v: unknown): Note | null => {
   if (!isRecord(v)) return null;
   return {
     id: asId(v.id),
     title: str(v.title),
     body: str(v.body),
-    date: str(v.date),
+    date: asDate(v.date),
   };
 };
 
@@ -61,7 +73,7 @@ const toGroup = (v: unknown): Group | null => {
 
 const toLearned = (v: unknown): LearnedItem | null => {
   if (!isRecord(v)) return null;
-  return { id: asId(v.id), text: str(v.text), date: str(v.date) };
+  return { id: asId(v.id), text: str(v.text), date: asDate(v.date) };
 };
 
 const toTarget = (v: unknown): Target | null => {

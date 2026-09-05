@@ -54,11 +54,26 @@ Satu objek `AppData` menampung `groups`, `general`, `learned`, `targets`,
 Setiap entitas punya `id` bertipe string (UUID v4 dari `crypto.randomUUID()`,
 dengan fallback untuk konteks non-secure seperti akses lewat IP LAN di http).
 
-**Kompatibilitas data lama.** Versi sebelumnya memakai `Date.now()` sebagai id,
-yang bertipe number, dan versi paling awal belum punya array `bin`.
-`src/data/migrate.ts` menormalkan keduanya saat load — id numerik dipertahankan
-nilainya (dikonversi ke string) supaya referensi antar-entitas tetap utuh, dan
-entri yang tidak terbaca dibuang alih-alih bikin render crash.
+Tanggal disimpan sebagai ISO `YYYY-MM-DD`. Formatnya dipilih karena string ISO
+terurut secara leksikografis **persis sama** dengan urutan kronologis — jadi
+sorting cukup `localeCompare`, tanpa helper perbandingan sama sekali. Tampilan
+dibentuk saat render: `isoToDisplay()` menyembunyikan tahun kalau masih tahun
+berjalan, `isoToLong()` selalu menyertakannya.
+
+**Kompatibilitas data lama.** `src/data/migrate.ts` menormalkan bentuk-bentuk
+lama saat load:
+
+- id numerik (`Date.now()`) → string, nilainya dipertahankan supaya referensi
+  antar-entitas tetap utuh;
+- array `bin` yang belum ada → di-backfill;
+- label tanggal lama `"17 May"` → ISO. Karena label itu tidak menyimpan tahun,
+  tahunnya **diperkirakan**: kemunculan terakhir dari tanggal-bulan tersebut
+  pada atau sebelum hari ini. Jadi label yang jatuh setelah hari ini di kalender
+  akan dianggap tahun lalu. Ini heuristik — entri yang di-backdate lebih dari
+  setahun tidak bisa dipulihkan persis — tapi hasilnya terurut benar, sesuatu
+  yang format tanpa tahun memang tidak pernah bisa lakukan.
+
+Entri yang sama sekali tidak terbaca dibuang, alih-alih bikin render crash.
 
 Hapus item bersifat *soft delete*: item pindah ke `bin` dan bisa di-restore
 selama 30 hari. Catatan: item kedaluwarsa hanya disembunyikan dari tampilan,
@@ -127,15 +142,20 @@ Ini cukup untuk tracker pribadi lintas perangkat sendiri. Ini **tidak cukup**
 untuk data sensitif atau penggunaan multi-user. Untuk itu, tambahkan Supabase
 Auth lalu ubah policy-nya jadi berbasis `auth.uid()`.
 
+## Gestur
+
+Swipe kanan = hapus, swipe kiri = edit. Dibangun di atas Pointer Events, jadi
+jalan dengan sentuhan maupun mouse.
+
+Dua detail yang membuatnya akur dengan tap handler di baris yang dibungkusnya:
+`touch-action: pan-y` menyerahkan scroll vertikal ke browser sementara gerakan
+horizontal kita yang tangani, dan klik yang menyusul setelah drag beneran
+ditelan di fase capture — supaya swipe tidak sekalian membuka item.
+
 ## Keterbatasan yang diketahui
 
-- **Tanggal tanpa tahun.** Entitas menyimpan label seperti `"17 May"` tanpa
-  tahun, jadi `dateScore()` menganggap tanggal dari tahun berbeda sebagai tahun
-  yang sama. Memperbaikinya butuh perubahan model data (menambah timestamp ISO),
-  bukan sekadar refactor.
-- **Swipe hanya untuk sentuhan.** Aksi swipe (kanan = hapus, kiri = edit) pakai
-  touch event, jadi tidak jalan dengan mouse di desktop. Setiap aksinya masih
-  bisa dijangkau lewat tombol lain.
 - **Sync manual.** Push/pull dijalankan lewat tombol, bukan otomatis, supaya
   tidak membanjiri API di tiap ketikan. Tidak ada resolusi konflik — pull
   menimpa data lokal, push menimpa data remote.
+- **Tanggal, bukan waktu.** Entitas menyimpan tanggal kalender saja, jadi dua
+  entri di hari yang sama tidak punya urutan antar-keduanya.
